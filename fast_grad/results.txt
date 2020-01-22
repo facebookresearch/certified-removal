@@ -1,0 +1,107 @@
+README:
+
+Parameters:
+- N: Number of samples
+- D: Dimensionality of the inputs and hidden layers - width of the network
+- L: Number of hidden layers - depth of the network
+
+Functions:
+- Full : Computes the averaged gradient
+- Naive: Compute each individual gradient by repeatedly calling backward
+- Goodf: Compute the individual gradients using Goodfellow's Trick,
+  which is equivalent to redefining the backward pass to _not_ aggregate individual gradients
+
+Checking correctness is done with torch.norm()
+- For the diff. to the Full gradient, we first average over the sample
+- For the difference between individual gradient methods,
+  we take the L2 norm between [N x ...] matrices
+
+Setup [N, D, L] = [2, 3, 1]
+---
+
+  Checking correctness
+  ---
+  - Diff. to full batch for (Goodf):        0.000000
+  - Diff. to full batch for (Naive):        0.000000
+  - Difference between (Naive) and (Goodf): 0.000000
+
+  Simple timing
+  ---
+  - Full    : 0.001s
+  - (Goodf) : 0.000s
+  - (Naive) : 0.001s
+
+Setup [N, D, L] = [10, 100, 10]
+---
+
+  Checking correctness
+  ---
+  - Diff. to full batch for (Goodf):        0.000000
+  - Diff. to full batch for (Naive):        0.000000
+  - Difference between (Naive) and (Goodf): 0.000000
+
+  Simple timing
+  ---
+  - Full    : 0.001s
+  - (Goodf) : 0.004s
+  - (Naive) : 0.014s
+
+Setup [N, D, L] = [100, 100, 10]
+---
+
+  Checking correctness
+  ---
+  - Diff. to full batch for (Goodf):        0.000000
+  - Diff. to full batch for (Naive):        0.000000
+  - Difference between (Naive) and (Goodf): 0.000001
+
+  Simple timing
+  ---
+  - Full    : 0.004s
+  - (Goodf) : 0.025s
+  - (Naive) : 0.308s
+
+Setup [N, D, L] = [100, 300, 3]
+---
+
+  Checking correctness
+  ---
+  - Diff. to full batch for (Goodf):        0.000000
+  - Diff. to full batch for (Naive):        0.000000
+  - Difference between (Naive) and (Goodf): 0.000003
+
+  Simple timing
+  ---
+  - Full    : 0.006s
+  - (Goodf) : 0.055s
+  - (Naive) : 0.431s
+
+Setup [N, D, L] = [32, 300, 50]
+---
+
+  Checking correctness
+  ---
+  - Diff. to full batch for (Goodf):        0.000000
+  - Diff. to full batch for (Naive):        0.000000
+  - Difference between (Naive) and (Goodf): 0.000000
+
+  Simple timing
+  ---
+  - Full    : 0.039s
+  - (Goodf) : 0.342s
+  - (Naive) : 1.258s
+
+Setup [N, D, L] = [1000, 100, 10]
+---
+
+  Checking correctness
+  ---
+  - Diff. to full batch for (Goodf):        0.000000
+  - Diff. to full batch for (Naive):        0.000000
+  - Difference between (Naive) and (Goodf): 0.000002
+
+  Simple timing
+  ---
+  - Full    : 0.029s
+  - (Goodf) : 0.253s
+  - (Naive) : 13.588s
