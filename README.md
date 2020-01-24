@@ -19,7 +19,7 @@ We assume the following project directory structure:
 Training a (0.1, 1e-5)-differentially private feature extractor for SVHN:
 
 ```bash
-python train_svhn.py --data-dir <SVHN path> --train-mode private --epsilon 0.1 --delta 1e-5
+python train_svhn.py --data-dir <SVHN path> --train-mode private --epsilon 0.1 --delta 1e-5 --normalize --save-model
 ```
 
 Extracting features using the differentially private extractor:
@@ -33,7 +33,7 @@ python train_svhn.py --data-dir <SVHN path> --saved save/svhn_cnn.pth --test-mod
 Training a removal-enabled one-vs-all linear classifier and removing 1000 training points:
 
 ```bash
-python test_removal.py --verbose --extractor dp_eps_0.1 --dataset SVHN --std 10 --lam 2e-4 --num-steps 100 --subsample-ratio 0.1
+python test_removal.py --data-dir <SVHN path> --verbose --extractor dp_eps_0.10 --dataset SVHN --std 10 --lam 2e-4 --num-steps 100 --subsample-ratio 0.1
 ```
 
 This script randomly samples 1000 training points and applies the Newton update removal mechanism.

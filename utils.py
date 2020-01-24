@@ -17,7 +17,7 @@ def extract_features(extr, device, data_loader):
     with torch.no_grad():
         for batch_idx, (data, target) in enumerate(data_loader):
             data, target = data.to(device), target.to(device)
-            output = extr.forward(data).data.cpu()
+            output = extr(data).data.cpu()
             if features is None:
                 features = output.squeeze()
                 labels = target

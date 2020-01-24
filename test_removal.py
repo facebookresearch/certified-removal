@@ -17,6 +17,7 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 import argparse
 import os
+from sklearn.linear_model import LogisticRegression
 
 parser = argparse.ArgumentParser(description='Training a removal-enabled linear model and testing removal')
 parser.add_argument('--data-dir', type=str, required=True, help='data directory')
@@ -146,19 +147,13 @@ def spectral_norm(A, num_iters=20):
 
 # loads extracted features
 checkpoint = torch.load('%s/%s_%s_extracted.pth' % (args.data_dir, args.extractor, args.dataset))
-# L2 normalize features
 X_train = checkpoint['X_train'].cpu()
 y_train = checkpoint['y_train'].cpu()
 X_test = checkpoint['X_test'].cpu()
 y_test = checkpoint['y_test'].cpu()
-norms = X_train.norm(2, 1)
-multiplier = norms.new(norms.size()).fill_(1)
-multiplier[norms.gt(1)] = 1 / norms[norms.gt(1)]
-X_train *= multiplier.unsqueeze(1)
-norms = X_test.norm(2, 1)
-multiplier = norms.new(norms.size()).fill_(1)
-multiplier[norms.gt(1)] = 1 / norms[norms.gt(1)]
-X_test = X_test / X_test.norm(2, 1).unsqueeze(1)
+# L2 normalize features
+X_train /= X_train.norm(2, 1).unsqueeze(1)
+X_test /= X_test.norm(2, 1).unsqueeze(1)
 # convert labels to +/-1
 if args.train_mode == 'binary':
     y_train_onehot = (2 * y_train - 1)
@@ -203,21 +198,17 @@ else:
     else:
         # train K binary LR models jointly
         w = ovr_lr_optimize(X_train, y_train_onehot, args.lam, weight, b=b, num_steps=args.num_steps, verbose=args.verbose)
-    if args.train_mode == 'binary':
-        pred = X_test.mm(w)
-        print(pred.gt(0).squeeze().eq(y_test.byte()).float().mean())
-    else:
-        pred = X_test.mm(w).max(1)[1]
-        print(pred.eq(y_test).float().mean())
-    print('Time elapsed: %.2fs' % time.time() - start)
+    print('Time elapsed: %.2fs' % (time.time() - start))
     torch.save({'w': w, 'b': b, 'weight': weight}, save_path)
+    X_train = X_train.cpu().double()
+    y_train_onehot = y_train_onehot.cpu().double()
 
 if args.train_mode == 'binary':
     pred = X_test.mm(w)
-    print(pred.gt(0).squeeze().eq(y_test.byte()).float().mean())
+    print('Test accuracy = %.4f' % pred.gt(0).squeeze().eq(y_test.byte()).float().mean())
 else:
     pred = X_test.mm(w).max(1)[1]
-    print(pred.eq(y_test).float().mean())
+    print('Test accuracy = %.4f' % pred.eq(y_test).float().mean())
 
 grad_norm_approx = torch.zeros(args.num_removes).float()
 times = torch.zeros(args.num_removes)
@@ -229,6 +220,7 @@ X_train = X_train.float().to(device)
 y_train = y_train[perm].float().to(device)
 
 # initialize K = X^T * X for fast computation of spectral norm
+print('Preparing for removal')
 if weight is None:
     K = X_train.t().mm(X_train)
 else:
@@ -266,10 +258,10 @@ for i in range(args.num_removes):
 
 if args.train_mode == 'binary':
     pred = X_test.mm(w_approx)
-    print(pred.gt(0).squeeze().eq(y_test.byte()).float().mean())
+    print('Test accuracy = %.4f' % pred.gt(0).squeeze().eq(y_test.byte()).float().mean())
 else:
     pred = X_test.mm(w_approx).max(1)[1]
-    print(pred.eq(y_test).float().mean())
+    print('Test accuracy = %.4f' % pred.eq(y_test).float().mean())
 
 save_path = '%s/%s_%s_splits_%d_ratio_%.2f_std_%.1f_lam_%.0e_removal.pth' % (
     args.result_dir, args.extractor, args.dataset, args.train_splits, args.subsample_ratio, args.std, args.lam)
