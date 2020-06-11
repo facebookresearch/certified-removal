@@ -11,8 +11,9 @@ import torch.nn.functional as F
 
 
 class Extractor(nn.Module):
-    def __init__(self, num_channels, kernel_size, stride, pool_size, bias=True):
+    def __init__(self, num_channels, kernel_size, stride, pool_size, bias=True, normalize=False):
         super(Extractor, self).__init__()
+        self.normalize = normalize
         self.pool_size = pool_size
         conv_layers = []
         assert(len(num_channels) >= 2)
@@ -23,7 +24,10 @@ class Extractor(nn.Module):
         for _, conv in enumerate(self.conv_layers):
             out = conv(x)
             x = F.max_pool2d(F.relu(out), self.pool_size, self.pool_size)
-        return x.view(x.size(0), -1)
+        out = x.view(x.size(0), -1)
+        if self.normalize:
+            out = F.normalize(out)
+        return out
 
 
 class MLP(nn.Module):

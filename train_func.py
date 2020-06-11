@@ -62,7 +62,7 @@ def train_private(args, extr, clf, loss_fn, device, train_loader, optimizer, epo
                 grad_vec += clip_and_sum_gradients(gradients_batch, C)
         loss /= data.size(0)
         grad_vec /= data.size(0)
-        noise = add_noisy_gradient(extr, clf, device, grad_vec, C, std, include_linear=include_linear)
+        noise = add_noisy_gradient(extr, clf, device, grad_vec, C, std / data.size(0), include_linear=include_linear)
         optimizer.step()
         if verbose and (batch_idx + 1) % args.log_interval == 0:
             print('Epoch %d [%d/%d]: loss = %.4f, grad_norm = %.4f, noise_norm = %.4f' % (

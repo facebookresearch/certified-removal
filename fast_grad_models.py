@@ -80,14 +80,14 @@ class FastGradMLP(nn.Module):
 
             # Save the activations and linear combinations from this layer.
             activations.append(out)
-            linearComb.retain_grad()
             linearComb.requires_grad_(True)
+            linearComb.retain_grad()
             linearCombs.append(linearComb)
 
         logits = self.output_layer(out)
 
-        logits.retain_grad()
         logits.requires_grad_(True)
+        logits.retain_grad()
         linearCombs.append(logits)
 
         return (logits, activations, linearCombs)

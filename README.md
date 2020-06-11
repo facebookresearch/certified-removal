@@ -2,7 +2,7 @@
 
 ### Dependencies
 
-torch, torchvision, scikit-learn
+torch, torchvision, scikit-learn, pytorch-dp
 
 ### Setup
 
@@ -19,13 +19,13 @@ We assume the following project directory structure:
 Training a (0.1, 1e-5)-differentially private feature extractor for SVHN:
 
 ```bash
-python train_svhn.py --data-dir <SVHN path> --train-mode private --epsilon 0.1 --delta 1e-5 --normalize --save-model
+python train_svhn.py --data-dir <SVHN path> --train-mode private --std 6 --delta 1e-5 --normalize --save-model
 ```
 
 Extracting features using the differentially private extractor:
 
 ```bash
-python train_svhn.py --data-dir <SVHN path> --saved save/svhn_cnn.pth --test-mode extract --epsilon 0.1
+python train_svhn.py --data-dir <SVHN path> --test-mode extract --std 6 --delta 1e-5
 ```
 
 ### Removing data from trained model
@@ -33,7 +33,7 @@ python train_svhn.py --data-dir <SVHN path> --saved save/svhn_cnn.pth --test-mod
 Training a removal-enabled one-vs-all linear classifier and removing 1000 training points:
 
 ```bash
-python test_removal.py --data-dir <SVHN path> --verbose --extractor dp_eps_0.10 --dataset SVHN --std 10 --lam 2e-4 --num-steps 100 --subsample-ratio 0.1
+python test_removal.py --data-dir <SVHN path> --verbose --extractor dp_delta_1.00e-05_std_6.00 --dataset SVHN --std 10 --lam 2e-4 --num-steps 100 --subsample-ratio 0.1
 ```
 
 This script randomly samples 1000 training points and applies the Newton update removal mechanism.
@@ -44,7 +44,7 @@ For this setting, the number of certifiably removed training points is limited b
 
 This code corresponds to the following paper:
 
-Chuan Guo, Tom Goldstein, Awni Hannun, and Laurens van der Maaten. **[Certified Data Removal from Machine Learning Models](https://arxiv.org/pdf/1911.03030.pdf)**. _arXiv:1911.03030_, 2019.
+Chuan Guo, Tom Goldstein, Awni Hannun, and Laurens van der Maaten. **[Certified Data Removal from Machine Learning Models](https://arxiv.org/pdf/1911.03030.pdf)**. ICML 2020.
 
 
 ### Contributing
