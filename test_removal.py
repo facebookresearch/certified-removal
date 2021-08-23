@@ -18,6 +18,7 @@ from torchvision import datasets, transforms
 import argparse
 import os
 from sklearn.linear_model import LogisticRegression
+from utils import load_features
 
 parser = argparse.ArgumentParser(description='Training a removal-enabled linear model and testing removal')
 parser.add_argument('--data-dir', type=str, required=True, help='data directory')
@@ -81,11 +82,6 @@ def lr_optimize(X, y, lam, b=None, num_steps=100, tol=1e-10, verbose=False):
         optimizer.step(closure)
     return w.data
 
-def onehot(y):
-    y_onehot = -torch.ones(y.size(0), y.max() + 1).float()
-    y_onehot.scatter_(1, y.long().unsqueeze(1), 1)
-    return y_onehot
-
 def ovr_lr_loss(w, X, y, lam, weight=None):
     z = batch_multiply(X, w).mul_(y)
     if weight is None:
@@ -146,21 +142,7 @@ def spectral_norm(A, num_iters=20):
     return math.sqrt(norm)
 
 # loads extracted features
-checkpoint = torch.load('%s/%s_%s_extracted.pth' % (args.data_dir, args.extractor, args.dataset))
-X_train = checkpoint['X_train'].cpu()
-y_train = checkpoint['y_train'].cpu()
-X_test = checkpoint['X_test'].cpu()
-y_test = checkpoint['y_test'].cpu()
-# L2 normalize features
-X_train /= X_train.norm(2, 1).unsqueeze(1)
-X_test /= X_test.norm(2, 1).unsqueeze(1)
-# convert labels to +/-1
-if args.train_mode == 'binary':
-    y_train_onehot = (2 * y_train - 1)
-else:
-    y_train_onehot = onehot(y_train)
-if len(y_train_onehot.size()) == 1:
-    y_train_onehot = y_train_onehot.unsqueeze(1)
+X_train, X_test, y_train, y_train_onehot, y_test = load_features(args)
 X_test = X_test.float().to(device)
 y_test = y_test.to(device)
 
@@ -184,37 +166,41 @@ else:
     else:
         weight = None
     # sample objective perturbation vector
-    b = args.std * torch.randn(X_train.size(1), y_train_onehot.size(1)).float().to(device)
     X_train = X_train.float().to(device)
+    y_train = y_train.float().to(device)
     y_train_onehot = y_train_onehot.float().to(device)
-    if args.train_sep:
-        # train K binary LR models separately
-        w = torch.zeros(b.size()).float().to(device)
-        for k in range(y_train_onehot.size(1)):
-            if weight is None:
-                w[:, k] = lr_optimize(X_train, y_train_onehot[:, k], args.lam, b=b[:, k], num_steps=args.num_steps, verbose=args.verbose)
-            else:
-                w[:, k] = lr_optimize(X_train[weight[:, k].gt(0)], y_train_onehot[:, k][weight[:, k].gt(0)], args.lam, b=b[:, k], num_steps=args.num_steps, verbose=args.verbose)
+    if args.train_mode == 'ovr':
+        b = args.std * torch.randn(X_train.size(1), y_train_onehot.size(1)).float().to(device)
+        if args.train_sep:
+            # train K binary LR models separately
+            w = torch.zeros(b.size()).float().to(device)
+            for k in range(y_train_onehot.size(1)):
+                if weight is None:
+                    w[:, k] = lr_optimize(X_train, y_train_onehot[:, k], args.lam, b=b[:, k], num_steps=args.num_steps, verbose=args.verbose)
+                else:
+                    w[:, k] = lr_optimize(X_train[weight[:, k].gt(0)], y_train_onehot[:, k][weight[:, k].gt(0)], args.lam, b=b[:, k], num_steps=args.num_steps, verbose=args.verbose)
+        else:
+            # train K binary LR models jointly
+            w = ovr_lr_optimize(X_train, y_train_onehot, args.lam, weight, b=b, num_steps=args.num_steps, verbose=args.verbose)
     else:
-        # train K binary LR models jointly
-        w = ovr_lr_optimize(X_train, y_train_onehot, args.lam, weight, b=b, num_steps=args.num_steps, verbose=args.verbose)
+        b = args.std * torch.randn(X_train.size(1)).float().to(device)
+        w = lr_optimize(X_train, y_train, args.lam, b=b, num_steps=args.num_steps, verbose=args.verbose)
     print('Time elapsed: %.2fs' % (time.time() - start))
     torch.save({'w': w, 'b': b, 'weight': weight}, save_path)
-    X_train = X_train.cpu().double()
-    y_train_onehot = y_train_onehot.cpu().double()
 
-if args.train_mode == 'binary':
-    pred = X_test.mm(w)
-    print('Test accuracy = %.4f' % pred.gt(0).squeeze().eq(y_test.byte()).float().mean())
-else:
+if args.train_mode == 'ovr':
     pred = X_test.mm(w).max(1)[1]
     print('Test accuracy = %.4f' % pred.eq(y_test).float().mean())
+else:
+    pred = X_test.mv(w)
+    print('Test accuracy = %.4f' % pred.gt(0).squeeze().eq(y_test.gt(0)).float().mean())
 
 grad_norm_approx = torch.zeros(args.num_removes).float()
 times = torch.zeros(args.num_removes)
-y_train = y_train_onehot
+if args.train_mode == 'ovr':
+    y_train = y_train_onehot
 w_approx = w.clone()
-perm = torch.randperm(X_train.size(0))
+perm = torch.randperm(X_train.size(0)).to(y_train.device)
 X_train = X_train.index_select(0, perm)
 X_train = X_train.float().to(device)
 y_train = y_train[perm].float().to(device)
@@ -233,35 +219,50 @@ else:
 print('Testing removal')
 for i in range(args.num_removes):
     start = time.time()
-    for k in range(y_train_onehot.size(1)):
-        if weight is None or weight[i, k] > 0:
-            X_rem = X_train[(i+1):]
-            y_rem = y_train[(i+1):, k]
-            if weight is not None:
-                X_rem = X_rem[weight[(i+1):, k].gt(0)]
-                y_rem = y_rem[weight[(i+1):, k].gt(0)]
-            H_inv = lr_hessian_inv(w_approx[:, k], X_rem, y_rem, args.lam)
-            grad_i = lr_grad(w_approx[:, k], X_train[i].unsqueeze(0), y_train[i, k].unsqueeze(0), args.lam)
-            # apply rank-1 down-date to K
-            if weight is None:
-                K -= torch.ger(X_train[i], X_train[i])
-                spec_norm = spectral_norm(K)
-            else:
-                Ks[k] -= torch.ger(X_train[i], X_train[i])
-                spec_norm = spectral_norm(Ks[k])
-            Delta = H_inv.mv(grad_i)
-            Delta_p = X_rem.mv(Delta)
-            w_approx[:, k] += Delta
-            grad_norm_approx[i] += Delta.norm() * Delta_p.norm() * spec_norm / 4
+    if args.train_mode == 'ovr':
+        # removal from all one-vs-rest models
+        for k in range(y_train_onehot.size(1)):
+            if weight is None or weight[i, k] > 0:
+                X_rem = X_train[(i+1):]
+                y_rem = y_train[(i+1):, k]
+                if weight is not None:
+                    X_rem = X_rem[weight[(i+1):, k].gt(0)]
+                    y_rem = y_rem[weight[(i+1):, k].gt(0)]
+                H_inv = lr_hessian_inv(w_approx[:, k], X_rem, y_rem, args.lam)
+                grad_i = lr_grad(w_approx[:, k], X_train[i].unsqueeze(0), y_train[i, k].unsqueeze(0), args.lam)
+                # apply rank-1 down-date to K
+                if weight is None:
+                    K -= torch.ger(X_train[i], X_train[i])
+                    spec_norm = spectral_norm(K)
+                else:
+                    Ks[k] -= torch.ger(X_train[i], X_train[i])
+                    spec_norm = spectral_norm(Ks[k])
+                Delta = H_inv.mv(grad_i)
+                Delta_p = X_rem.mv(Delta)
+                w_approx[:, k] += Delta
+                grad_norm_approx[i] += (Delta.norm() * Delta_p.norm() * spec_norm / 4).cpu()
+    else:
+        # removal from a single binary logistic regression model
+        X_rem = X_train[(i+1):]
+        y_rem = y_train[(i+1):]
+        H_inv = lr_hessian_inv(w_approx[:], X_rem, y_rem, args.lam)
+        grad_i = lr_grad(w_approx, X_train[i].unsqueeze(0), y_train[i].unsqueeze(0), args.lam)
+        K -= torch.ger(X_train[i], X_train[i])
+        spec_norm = spectral_norm(K)
+        Delta = H_inv.mv(grad_i)
+        Delta_p = X_rem.mv(Delta)
+        w_approx += Delta
+        grad_norm_approx[i] += (Delta.norm() * Delta_p.norm() * spec_norm / 4).cpu()
+            
     times[i] = time.time() - start
     print('Iteration %d: Grad norm bound = %.6f, time = %.2fs' % (i+1, grad_norm_approx[i], times[i]))
 
-if args.train_mode == 'binary':
-    pred = X_test.mm(w_approx)
-    print('Test accuracy = %.4f' % pred.gt(0).squeeze().eq(y_test.byte()).float().mean())
-else:
+if args.train_mode == 'ovr':
     pred = X_test.mm(w_approx).max(1)[1]
     print('Test accuracy = %.4f' % pred.eq(y_test).float().mean())
+else:
+    pred = X_test.mv(w)
+    print('Test accuracy = %.4f' % pred.gt(0).squeeze().eq(y_test.gt(0)).float().mean())
 
 save_path = '%s/%s_%s_splits_%d_ratio_%.2f_std_%.1f_lam_%.0e_removal.pth' % (
     args.result_dir, args.extractor, args.dataset, args.train_splits, args.subsample_ratio, args.std, args.lam)
