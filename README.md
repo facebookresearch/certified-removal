@@ -40,6 +40,14 @@ This script randomly samples 1000 training points and applies the Newton update 
 The total gradient residual norm bound is accumulated, which governs how many of the 1000 training points can be removed before re-training.
 For this setting, the number of certifiably removed training points is limited by the DP feature extractor.
 
+### Removing data from an MNIST 3 vs. 8 model
+
+Training a removal-enabled binary logistic regression classifier for MNIST 3 vs. 8 and removing 1000 training points:
+
+```bash
+python test_removal.py --data-dir <MNIST path> --verbose --extractor none --dataset MNIST --train-mode binary --std 10 --lam 1e-3 --num-steps 100
+```
+
 ### Reference
 
 This code corresponds to the following paper:
